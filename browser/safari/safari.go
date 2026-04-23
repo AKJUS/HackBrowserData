@@ -212,9 +212,23 @@ func resolveSourcePaths(sources map[types.Category][]sourcePath) map[types.Categ
 	return resolved
 }
 
-// Safari's History.db uses the Core Data epoch (2001-01-01) instead of Unix epoch.
+// Offset from the Core Data epoch (2001-01-01 UTC) to the Unix epoch.
 const coreDataEpochOffset = 978307200
 
+// maxCoreDataSeconds is the largest CFAbsoluteTime that still lands inside
+// time.Time.MarshalJSON's [1, 9999] year window. Also bounds the float →
+// int64 conversion below; Go's spec makes out-of-range conversions return
+// an implementation-dependent int64, which could silently corrupt results.
+const maxCoreDataSeconds = 252423993600
+
+// coredataTimestamp converts Core Data seconds (CFAbsoluteTime) to UTC.
+// Returns zero for non-positive input or out-of-JSON-range values.
 func coredataTimestamp(seconds float64) time.Time {
-	return time.Unix(int64(seconds)+coreDataEpochOffset, 0)
+	if seconds <= 0 || seconds > maxCoreDataSeconds {
+		return time.Time{}
+	}
+	whole := int64(seconds)
+	frac := seconds - float64(whole)
+	nanos := int64(frac * 1e9)
+	return time.Unix(whole+coreDataEpochOffset, nanos).UTC()
 }
